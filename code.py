@@ -5,37 +5,45 @@ import wifi
 import socketpool
 import adafruit_requests
 
-import busio
-from lcd.lcd import LCD
-from lcd.i2c_pcf8574_interface import I2CPCF8574Interface
-from lcd.lcd import CursorMode
+import board
+import digitalio
+import adafruit_pcd8544
 
 import altimeter
 import static
 
-# Talk to the LCD at I2C address 0x27
-lcd = LCD(I2CPCF8574Interface(busio.I2C(static.scl_lcd, static.sda_lcd), 0x27), num_rows=2, num_cols=16)
-lcd.clear()
-lcd.set_backlight(True)
+# Initialize SPI bus and control pins
+display = adafruit_pcd8544.PCD8544(static.spi, static.dc, static.cs, static.reset)
 
-# Create custom LCD characters (only need to run once for the LCD?)
-lcd.create_char(0, static.asc)
-lcd.create_char(1, static.dsc)
-lcd.create_char(2, static.rcvd)
+# Reset display
+display.fill(0)
+display.show()
+
+backlight = digitalio.DigitalInOut(board.GP9)  # backlight
+backlight.switch_to_output()
+backlight.value = True
+
+# Display settings
+display.bias = 4
+display.contrast = 55
 
 # Try to connect to Wi-Fi
 try:
     wifi.radio.connect(os.getenv('CIRCUITPY_WIFI_SSID'), os.getenv('CIRCUITPY_WIFI_PASSWORD'))
 except:
     internet = False
-    lcd.clear()
-    lcd.print('No WiFi')
+    display.text('No WiFi', 0, 0, 1)
+    display.show()
     time.sleep(0.5)
-    lcd.clear()
+    display.fill(0)
+    display.show()
 else:
-    lcd.print('WiFi Connected')
+    display.text('WiFi', 0, 0, 1)
+    display.text('Connected', 0, 8, 1)
+    display.show()
     time.sleep(0.5)
-    lcd.clear()
+    display.fill(0)
+    display.show()
     internet = True
 
 url = f'https://api.openweathermap.org/data/2.5/weather?lat={static.lat}&lon={static.lon}&appid={os.getenv("API_KEY")}'
@@ -49,8 +57,8 @@ received = False  # assume API connection was unsuccessful by default
 # Cumulative ascent/descent counter
 cum_asc = 0.
 cum_dsc = 0.
-
 i = 0  # seconds counter
+
 while True:
 
     # Try to get the current station pressure
@@ -58,8 +66,12 @@ while True:
     if ((i == 0) | (i >= static.interval_P0)) & (internet != False):
         received = False  # "station pressure received" indicator
 
-        lcd.clear()
-        lcd.print('Updating station pressure')  # update display
+        display.fill(0)
+        display.show()
+        display.text('Updating', 0, 0, 1)
+        display.text('station', 0, 8, 1)
+        display.text('pressure', 0, 16, 1)
+        display.show()
 
         try:
             response = requests.get(url)
@@ -71,9 +83,24 @@ while True:
                 P0 = data['main']['pressure'] * 100
                 received = True  # set "rcvd" to true if successful
             else:
-                print('API returned error')
+                print('API error')
         i = 0  # Reset the counter
-        lcd.clear()
+        display.fill(0)
+        display.show()
+
+    # Set up static text
+    display.text('m', 35, 0, 1)
+    display.text('ft', 35, 8, 1)
+    display.text('Asc', 0, 24, 1)
+    display.text('Dsc', 0, 32, 1)
+    display.text('m', 55, 24, 1)
+    display.text('m', 55, 32, 1)
+
+    # Display indicator if the last attempt to update the station pressure was successful
+    if received:
+        display.text('Rx', display.width - 11, 40, 1)
+
+    display.show()
 
     # Get sensor pressure
     P = altimeter.get_sensor_pressure()
@@ -94,31 +121,26 @@ while True:
         h_valid = h_now
 
     # Display altitude
-    lcd.set_cursor_pos(0, 6)
-    lcd.print('m')
-    lcd.set_cursor_pos(1, 6)
-    lcd.print('ft')
-    lcd.set_cursor_pos(0, 0)
-    lcd.print(str(h_now)[:5])  # metres
-    lcd.set_cursor_pos(1, 0)
-    lcd.print(str(altimeter.metres_to_feet(h_now))[:5])  # feet
+    display.text(str(h_now)[:5], 0, 0, 1)  # metres
+    display.text(str(altimeter.metres_to_feet(h_now))[:5], 0, 8, 1)  # feet
 
     # Display cumulative ascent/descent
-    lcd.set_cursor_pos(0, 9)
-    lcd.write(0)  # up icon
-    lcd.set_cursor_pos(1, 9)
-    lcd.write(1)  # down icon
-    lcd.set_cursor_pos(0, 10)
-    lcd.print(str(cum_asc)[:4])
-    lcd.set_cursor_pos(1, 10)
-    lcd.print(str(cum_dsc)[:4])
+    display.text(str(cum_asc)[:4], 25, 24, 1)
+    display.text(str(cum_dsc)[:4], 25, 32, 1)
 
-    # Show a checkmark if the last attempt to update the station pressure was successful
-    if received:
-        lcd.set_cursor_pos(0, 15)
-        lcd.write(2)
+    display.show()
 
     time.sleep(static.interval_P)
+
+    # Refresh altitude text
+    for x in range(0, 30):
+        display.line(x, 0, x, 16, 0)
+    display.show()
+
+    # Refresh cumulative text
+    for x in range(25, 45):
+        display.line(x, 24, x, 38, 0)
+    display.show()
 
     # Update the time elapsed since the last station pressure update
     i = i + static.interval_P
