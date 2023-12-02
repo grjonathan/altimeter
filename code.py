@@ -34,14 +34,14 @@ except:
     internet = False
     display.text('No WiFi', 0, 0, 1)
     display.show()
-    time.sleep(0.5)
+    time.sleep(0.7)
     display.fill(0)
     display.show()
 else:
     display.text('WiFi', 0, 0, 1)
     display.text('Connected', 0, 8, 1)
     display.show()
-    time.sleep(0.5)
+    time.sleep(0.7)
     display.fill(0)
     display.show()
     internet = True
@@ -76,15 +76,26 @@ while True:
         try:
             response = requests.get(url)
         except:
-            print('Unable to connect to API')
+            display.fill(0)
+            display.show()
+            display.text('API error 1', 0, 0, 1)
+            display.show()
+            time.sleep(0.7)
         else:
             if response.status_code == 200:
                 data = response.json()
                 P0 = data['main']['pressure'] * 100
                 received = True  # set "rcvd" to true if successful
             else:
-                print('API error')
-        i = 0  # Reset the counter
+                display.fill(0)
+                display.show()
+                display.text('API error 2', 0, 0, 1)
+                display.show()
+                time.sleep(0.7)
+
+        t0 = time.time()  # record time at last update (the last time we were in this loop)
+        s = 0  # reset seconds counter
+
         display.fill(0)
         display.show()
 
