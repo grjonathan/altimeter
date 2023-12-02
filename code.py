@@ -104,16 +104,16 @@ while True:
     # Set up static text
     display.text('m', 35, 0, 1)
     display.text('ft', 35, 8, 1)
-    display.text('Asc', 0, 24, 1)
-    display.text('Dsc', 0, 32, 1)
-    display.text('m', 55, 24, 1)
-    display.text('m', 55, 32, 1)
+    display.text('Asc', 0, 23, 1)
+    display.text('Dsc', 0, 31, 1)
+    display.text('m', 55, 23, 1)
+    display.text('m', 55, 31, 1)
 
     # Display indicator if the last attempt to update the station pressure was successful
     if received:
-        display.text('Rx', display.width - 11, 40, 1)
-
-    display.show()
+        display.text('Rx', display.width - 11, 0, 1)
+        display.rect(2, display.height - 4, display.width - 4, 4, 1)
+        display.show()
 
     # Get sensor pressure
     P = altimeter.get_sensor_pressure()
@@ -134,13 +134,24 @@ while True:
         cum_dsc = cum_dsc + abs(h_now - h_valid)
         h_valid = h_now
 
-    # Display altitude
-    display.text(str(h_now)[:5], 0, 0, 1)  # metres
-    display.text(str(altimeter.metres_to_feet(h_now))[:5], 0, 8, 1)  # feet
+    # Prepare altitude strings
+    disp_m = str(h_now)[:5]
+    disp_ft = str(altimeter.metres_to_feet(h_now))[:5]
+    display.text(disp_m, 0, 0, 1)  # metres
+    display.text(disp_ft, 0, 8, 1)  # feet
 
-    # Display cumulative ascent/descent
-    display.text(str(cum_asc)[:4], 25, 24, 1)
-    display.text(str(cum_dsc)[:4], 25, 32, 1)
+    # Prepare cumulative ascent/descent strings
+    disp_cum_asc = str(cum_asc)[:4]
+    disp_cum_dsc = str(cum_dsc)[:4]
+    display.text(disp_cum_asc, 25, 23, 1)
+    display.text(disp_cum_dsc, 25, 31, 1)
+
+    # Stage progress bar for display
+    if (s > 0) & received:
+        prog = round(s / (static.interval_P0 - static.interval_P) * 8)
+        for n in range(0, prog):
+            for row in [2, 3]:
+                display.line(3 + n * 10, display.height - row, 10 + n * 10, display.height - row, 1)
 
     display.show()
     time.sleep(static.interval_P)  # HOLD
