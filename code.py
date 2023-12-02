@@ -57,10 +57,11 @@ received = False  # assume API connection was unsuccessful by default
 # Cumulative ascent/descent counter
 cum_asc = 0.
 cum_dsc = 0.
-i = 0  # seconds counter
+
+s = 0  # reset seconds counter
+t0 = time.time()  # record start time
 
 while True:
-
     # Try to get the current station pressure
     # if it's the first altitude reading, or it's time to update the station pressure and WiFi is available
     if ((s == 0) | (s >= static.interval_P0)) & internet:
@@ -157,4 +158,4 @@ while True:
     display.show()
 
     # Update the time elapsed since the last station pressure update
-    i = i + static.interval_P
+    s = time.time() - t0
