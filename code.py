@@ -156,16 +156,11 @@ while True:
     display.show()
     time.sleep(static.interval_P)  # HOLD
 
-    time.sleep(static.interval_P)
-
-    # Refresh altitude text
-    for x in range(0, 30):
-        display.line(x, 0, x, 16, 0)
-    display.show()
-
-    # Refresh cumulative text
-    for x in range(25, 45):
-        display.line(x, 24, x, 38, 0)
+    # Refresh altitude text (white out the exact same pixels)
+    display.text(disp_m, 0, 0, 0)  # metres
+    display.text(disp_ft, 0, 8, 0)  # feet
+    display.text(disp_cum_asc, 25, 23, 0)
+    display.text(disp_cum_dsc, 25, 31, 0)
     display.show()
 
     # Update the time elapsed since the last station pressure update
