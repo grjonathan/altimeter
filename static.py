@@ -3,8 +3,8 @@ import busio
 import digitalio
 
 # NUMERICS
-interval_P = 1  # sensor pressure sample rate, seconds
-interval_P0 = 600  # station pressure refresh rate, seconds (should be divisible by static.interval_P)
+interval_P = 5  # sensor pressure sample rate, seconds
+interval_P0 = 600  # station pressure refresh rate, seconds
 h_threshold = 2.  # minimum elevation change to register as cumulative ascent or descent, metres
 
 # LOCATION

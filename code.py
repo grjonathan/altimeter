@@ -63,11 +63,12 @@ while True:
 
     # Try to get the current station pressure
     # if it's the first altitude reading, or it's time to update the station pressure and WiFi is available
-    if ((i == 0) | (i >= static.interval_P0)) & (internet != False):
+    if ((s == 0) | (s >= static.interval_P0)) & internet:
         received = False  # "station pressure received" indicator
 
         display.fill(0)
         display.show()
+
         display.text('Updating', 0, 0, 1)
         display.text('station', 0, 8, 1)
         display.text('pressure', 0, 16, 1)
@@ -85,7 +86,7 @@ while True:
             if response.status_code == 200:
                 data = response.json()
                 P0 = data['main']['pressure'] * 100
-                received = True  # set "rcvd" to true if successful
+                received = True  # set received indicator to true if successful
             else:
                 display.fill(0)
                 display.show()
@@ -119,8 +120,9 @@ while True:
     # Calculate altitude from pressure
     h_now = altimeter.barometric_formula(P, P0)
 
+    # Calculate cumulative ascent/descent
     # Assume the first altitude reading is valid
-    if i == 0:
+    if s == 0:
         h_valid = h_now
 
     if h_now - h_valid > static.h_threshold:  # ignore differences smaller than the threshold
@@ -140,6 +142,7 @@ while True:
     display.text(str(cum_dsc)[:4], 25, 32, 1)
 
     display.show()
+    time.sleep(static.interval_P)  # HOLD
 
     time.sleep(static.interval_P)
 
