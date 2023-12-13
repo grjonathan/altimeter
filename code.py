@@ -1,12 +1,6 @@
-import os
-import ssl
 import time
-import wifi
-import socketpool
-import adafruit_requests
+import math
 
-import board
-import digitalio
 import adafruit_pcd8544
 
 import altimeter
@@ -15,153 +9,99 @@ import static
 # Initialize SPI bus and control pins
 display = adafruit_pcd8544.PCD8544(static.spi, static.dc, static.cs, static.reset)
 
-# Reset display
-display.fill(0)
-display.show()
 
-backlight = digitalio.DigitalInOut(board.GP9)  # backlight
-backlight.switch_to_output()
-backlight.value = True
+def bar(x, y, scale):  # draws a vertical bar downwards from x,y
+    x = x
+    y = int(47 - y * 47 * scale)  # scale = percentage of the screen to use
+    display.line(x, y, x, 47, 1)
+
 
 # Display settings
 display.bias = 4
 display.contrast = 55
 
-# Try to connect to Wi-Fi
-try:
-    wifi.radio.connect(os.getenv('CIRCUITPY_WIFI_SSID'), os.getenv('CIRCUITPY_WIFI_PASSWORD'))
-except:
-    internet = False
-    display.text('No WiFi', 0, 0, 1)
-    display.show()
-    time.sleep(0.7)
-    display.fill(0)
-    display.show()
-else:
-    display.text('WiFi', 0, 0, 1)
-    display.text('Connected', 0, 8, 1)
-    display.show()
-    time.sleep(0.7)
-    display.fill(0)
-    display.show()
-    internet = True
+display.fill(0)
+display.show()
 
-url = f'https://api.openweathermap.org/data/2.5/weather?lat={static.lat}&lon={static.lon}&appid={os.getenv("API_KEY")}'
+# Define variables
+coords = []
+h = None
+asc = 0
+dsc = 0
+t0 = time.monotonic()  # reference time for stopwatch
+t1 = time.monotonic()  # reference time for initial bar
+t2 = time.monotonic()  # reference time for initial pressure sample
+t3 = time.monotonic()  # reference time for alternating ascent/descent
 
-pool = socketpool.SocketPool(wifi.radio)
-requests = adafruit_requests.Session(pool, ssl.create_default_context())
+P0 = 101325  # standard atmospheric pressure
 
-P0 = 101325  # fallback station pressure in case GET fails the first time
-received = False  # assume API connection was unsuccessful by default
-
-# Cumulative ascent/descent counter
-cum_asc = 0.
-cum_dsc = 0.
-
-s = 0  # reset seconds counter
-t0 = time.time()  # record start time
+dt_P = 2.  # how often to sample the pressure, seconds
+dt_bar = 3600 / 83  # how often to add a bar to the graph, seconds (dt_bar * 83 = time-width of graph)
+dt_lcd = 1 / 8  # how often to refresh the display, seconds
+h_thres = 1.5  # minimum height change to register as ascent or descent, m
 
 while True:
-    # Try to get the current station pressure
-    # if it's the first altitude reading, or it's time to update the station pressure and WiFi is available
-    if ((s == 0) | (s >= static.interval_P0)) & internet:
-        received = False  # "station pressure received" indicator
-
-        display.fill(0)
-        display.show()
-
-        display.text('Updating', 0, 0, 1)
-        display.text('station', 0, 8, 1)
-        display.text('pressure', 0, 16, 1)
-        display.show()
-
-        try:
-            response = requests.get(url)
-        except:
-            display.fill(0)
-            display.show()
-            display.text('API error 1', 0, 0, 1)
-            display.show()
-            time.sleep(0.7)
-        else:
-            if response.status_code == 200:
-                data = response.json()
-                P0 = data['main']['pressure'] * 100
-                received = True  # set received indicator to true if successful
-            else:
-                display.fill(0)
-                display.show()
-                display.text('API error 2', 0, 0, 1)
-                display.show()
-                time.sleep(0.7)
-
-        t0 = time.time()  # record time at last update (the last time we were in this loop)
-        s = 0  # reset seconds counter
-
-        display.fill(0)
-        display.show()
-
-    # Set up static text
-    display.text('m', 35, 0, 1)
-    display.text('ft', 35, 8, 1)
-    display.text('Asc', 0, 23, 1)
-    display.text('Dsc', 0, 31, 1)
-    display.text('m', 55, 23, 1)
-    display.text('m', 55, 31, 1)
-
-    # Display indicator if the last attempt to update the station pressure was successful
-    if received:
-        display.text('Rx', display.width - 11, 0, 1)
-        display.rect(2, display.height - 4, display.width - 4, 4, 1)
-        display.show()
-
-    # Get sensor pressure
+    display.fill(0)
     P = altimeter.get_sensor_pressure()
 
-    # Calculate altitude from pressure
-    h_now = altimeter.barometric_formula(P, P0)
+    if time.monotonic() - t2 >= dt_P:
+        P = altimeter.get_sensor_pressure()
+        h_raw = altimeter.barometric_formula(P, P0)
 
-    # Calculate cumulative ascent/descent
-    # Assume the first altitude reading is valid
-    if s == 0:
-        h_valid = h_now
+        # Add cumulative ascent/descent
+        if h is None:  # if an 'h' hasn't been validated yet
+            h = h_raw  # assume the first 'h' is valid
+        elif h_raw - h > h_thres:  # if change greater than threshold
+            asc = asc + (h_raw - h)  # add descent
+            h = h_raw
+        elif h_raw - h < -h_thres:  # if change less than negative threshold
+            dsc = dsc + abs(h_raw - h)  # add descent
+            h = h_raw
+        t2 = time.monotonic()  # reset time since pressure sample
 
-    if h_now - h_valid > static.h_threshold:  # ignore differences smaller than the threshold
-        cum_asc = cum_asc + (h_now - h_valid)
-        h_valid = h_now
+    # Add bar to list
+    if time.monotonic() - t1 >= dt_bar:
+        P = altimeter.get_sensor_pressure()
+        h_raw = altimeter.barometric_formula(P, P0)
+        coords.append(h_raw)
+        coords = coords[-83:]  # store only the 83 most recent readings
+        hmin, hmax = min([i for i in coords]), max([i for i in coords])
+        t1 = time.monotonic()  # reset time since bar was updated
 
-    elif h_now - h_valid < -static.h_threshold:
-        cum_dsc = cum_dsc + abs(h_now - h_valid)
-        h_valid = h_now
+    # Display bar
+    if len(coords) > 1:
+        for i, val in enumerate(coords):
+            x = i
+            y = (val - hmin) / (hmax - hmin)
+            bar(x, y, 0.40)
 
-    # Prepare altitude strings
-    disp_m = str(h_now)[:5]
-    disp_ft = str(altimeter.metres_to_feet(h_now))[:5]
-    display.text(disp_m, 0, 0, 1)  # metres
-    display.text(disp_ft, 0, 8, 1)  # feet
+    # Display stats
+    # Cumulative ascent / descent
+    if time.monotonic() - t3 > 10.:  # show ascent for 5 seconds, descent for 5 seconds
+        t3 = time.monotonic()
+    if time.monotonic() - t3 < 5.:
+        display.text('Asc', 1, 9, 1)
+        display.text(str(asc)[:5], 25, 9, 1)
+        display.text('m', 65, 9, 1)
+    else:
+        for y in range(8, 17):  # show descent on a black background
+            display.line(0, y, 83, y, 1)
+        display.text('Dsc', 1, 9, 0)
+        display.text(str(dsc)[:5], 25, 9, 0)
+        display.text('m', 65, 9, 0)
 
-    # Prepare cumulative ascent/descent strings
-    disp_cum_asc = str(cum_asc)[:4]
-    disp_cum_dsc = str(cum_dsc)[:4]
-    display.text(disp_cum_asc, 25, 23, 1)
-    display.text(disp_cum_dsc, 25, 31, 1)
+    # Gauge pressure
+    display.text('P', 1, 0, 1)
+    display.text(str(int(P))[:6], 25, 0, 1)
+    display.text('Pa', 65, 0, 1)
 
-    # Stage progress bar for display
-    if (s > 0) & received:
-        prog = round(s / (static.interval_P0 - static.interval_P) * 8)
-        for n in range(0, prog):
-            for row in [2, 3]:
-                display.line(3 + n * 10, display.height - row, 10 + n * 10, display.height - row, 1)
+    # Time elapsed
+    display.text('T', 1, 18, 1)
+    elapsed_s = time.monotonic() - t0
+    hr = '{:0>2}'.format(str(int(elapsed_s // 3600)))
+    m = '{:0>2}'.format(str(int(elapsed_s % 3600 // 60)))
+    s = '{:0>2}'.format(str(math.floor(elapsed_s % 3600 % 60)))
+    display.text(f'{hr}:{m}:{s}', 25, 18, 1)
 
     display.show()
-    time.sleep(static.interval_P)  # HOLD
-
-    # Refresh altitude text (white out the exact same pixels)
-    display.text(disp_m, 0, 0, 0)  # metres
-    display.text(disp_ft, 0, 8, 0)  # feet
-    display.text(disp_cum_asc, 25, 23, 0)
-    display.text(disp_cum_dsc, 25, 31, 0)
-    display.show()
-
-    # Update the time elapsed since the last station pressure update
-    s = time.time() - t0
+    time.sleep(dt_lcd)
