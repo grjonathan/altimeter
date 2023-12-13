@@ -14,7 +14,3 @@ def get_sensor_pressure(scl=static.scl_bmp280, sda=static.sda_bmp280):
 def barometric_formula(P, P0):
     h = 44330 * (1 - (P / P0) ** (1 / 5.255))
     return h  # metres
-
-
-def metres_to_feet(h):
-    return h * 3.28  # feet
